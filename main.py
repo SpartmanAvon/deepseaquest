@@ -2,6 +2,7 @@ import time
 
 import gym
 import numpy as np
+from dqn import DQN
 import scipy.ndimage.interpolation as interpolation
 
 
@@ -47,28 +48,17 @@ class ReplayMemory:
         self.transitions = []
 
     def addTransition(self, transition):
+        # todo donot add zero layer states here
         if len(self.transitions) == self.capacity:
             self.transitions.pop(0)
         self.transitions.append(transition)
 
     def sample(self, batchSize):
-        # todo remove zero frames here
         indices = list(range(len(self.transitions)))
         np.random.shuffle(indices)
         sampleIndices = indices[:batchSize]
         sample = [self.transitions[i] for i in sampleIndices]
         return sample
-
-
-class DQN:
-    def __init__(self):
-        pass
-
-    def bestActionFor(self, state):
-        return 0
-
-    def train(self, transitions):
-        pass
 
 
 class DeepReinforcingAgent:
@@ -78,7 +68,7 @@ class DeepReinforcingAgent:
         self.replayMemory = ReplayMemory(replayMemoryCapacity)
         assert (0 <= explorationRate <= 1)
         self.explorationRate = explorationRate
-        self.Q = DQN()
+        self.Q = DQN(env.action_space.n)
 
     def chooseActionGreedily(self, state):
         if np.random.rand() <= self.explorationRate:
