@@ -7,128 +7,130 @@ import scipy.ndimage.interpolation as interpolation
 
 
 class StateGenerator:
-	@classmethod
-	def decrease_dimensionality(cls, image):
-		# downsample size = 80 x 80
-		downsampled = interpolation.zoom(image[20:-30, ], [0.5, 0.5, 1])
-		r, g, b = downsampled[:, :, 0], downsampled[:, :, 1], downsampled[:, :, 2]
-		# convert to grayscale
-		return 0.299 * r + 0.587 * g + 0.114 * b
+    @classmethod
+    def decrease_dimensionality(cls, image):
+        # downsample size = 80 x 80
+        downsampled = interpolation.zoom(image[20:-30, ], [0.5, 0.5, 1])
+        r, g, b = downsampled[:, :, 0], downsampled[:, :, 1], downsampled[:, :, 2]
+        # convert to grayscale
+        return 0.299 * r + 0.587 * g + 0.114 * b
 
-	def __init__(self, capacity):
-		self.capacity = capacity
-		self.frames = []
-		self.frameShape = (80, 80)
+    def __init__(self, capacity):
+        self.capacity = capacity
+        self.frames = []
+        self.frameShape = (80, 80)
 
-	def getState(self, frame):
-		if len(self.frames) == self.capacity:
-			self.frames.pop(0)
-		self.frames.append(frame)
-		return self.generateState()
+    def getState(self, frame):
+        if len(self.frames) == self.capacity:
+            self.frames.pop(0)
+        self.frames.append(frame)
+        return self.generateState()
 
-	def resetFrames(self):
-		self.frames = []
+    def resetFrames(self):
+        self.frames = []
 
-	def generateState(self):
-		paddingSize = self.capacity - len(self.frames)
-		zeroFrames = [np.zeros(self.frameShape) for _ in range(paddingSize)]
-		frames = [StateGenerator.decrease_dimensionality(f) for f in self.frames]
-		frames = zeroFrames + frames
-		return np.stack(frames, axis=2)
+    def generateState(self):
+        paddingSize = self.capacity - len(self.frames)
+        zeroFrames = [np.zeros(self.frameShape) for _ in range(paddingSize)]
+        frames = [StateGenerator.decrease_dimensionality(f) for f in self.frames]
+        frames = zeroFrames + frames
+        return np.stack(frames, axis=2)
 
 
 class Transition:
-	def __init__(self, state, action, reward, nextState, isTerminal):
-		self.state = state
-		self.action = action
-		self.reward = reward
-		self.nextState = nextState
-		self.isTerminal = isTerminal
+    def __init__(self, state, action, reward, nextState, isTerminal):
+        self.state = state
+        self.action = action
+        self.reward = reward
+        self.nextState = nextState
+        self.isTerminal = isTerminal
 
 
 class ReplayMemory:
-	def __init__(self, capacity):
-		self.capacity = capacity
-		self.transitions = []
+    def __init__(self, capacity):
+        self.capacity = capacity
+        self.transitions = []
 
-	def addTransition(self, transition):
-		# todo donot add zero layer states here
-		if len(self.transitions) == self.capacity:
-			self.transitions.pop(0)
-		self.transitions.append(transition)
+    def addTransition(self, transition):
+        # todo donot add zero layer states here
+        if len(self.transitions) == self.capacity:
+            self.transitions.pop(0)
+        self.transitions.append(transition)
 
-	def sample(self, batchSize):
-		indices = list(range(len(self.transitions)))
-		np.random.shuffle(indices)
-		sampleIndices = indices[:batchSize]
-		sample = [self.transitions[i] for i in sampleIndices]
-		return sample
+    def sample(self, batchSize):
+        # todo improve
+        indices = list(range(len(self.transitions)))
+        np.random.shuffle(indices)
+        sampleIndices = indices[:batchSize]
+        sample = [self.transitions[i] for i in sampleIndices]
+        return sample
 
 
 class DeepReinforcingAgent:
-	def __init__(self, env, stateGeneratorCapacity, replayMemoryCapacity, explorationRate, discount):
-		self.env = env
-		self.stateGenerator = StateGenerator(stateGeneratorCapacity)
-		self.replayMemory = ReplayMemory(replayMemoryCapacity)
-		assert (0 <= explorationRate <= 1)
-		self.explorationRate = explorationRate
-		self.discount = discount
-		self.evaluationStates = []
-		self.Q = DQN(env.action_space.n)
+    def __init__(self, env, stateGeneratorCapacity, replayMemoryCapacity, explorationRate, discount):
+        self.env = env
+        self.stateGenerator = StateGenerator(stateGeneratorCapacity)
+        self.replayMemory = ReplayMemory(replayMemoryCapacity)
+        assert (0 <= explorationRate <= 1)
+        self.explorationRate = explorationRate
+        self.Q = DQN(env.action_space.n)
+        self.discount = discount
+        self.metricStates = []
 
-	def chooseActionGreedily(self, state, ithTimestep, episodeMaxLength):
-		curExplorationRate = (ithTimestep*0.1 + (episodeMaxLength - ithTimestep)*self.explorationRate)/episodeMaxLength
-		if np.random.rand() <= curExplorationRate:
-			return self.env.action_space.sample()
-		else:
-			return np.argmax(self.Q.bestActionFor(state))
+    def chooseActionGreedily(self, state, ithTimestep, episodeMaxLength):
+        curExplorationRate = (ithTimestep * 0.1 + (
+                    episodeMaxLength - ithTimestep) * self.explorationRate) / episodeMaxLength
+        if np.random.rand() <= curExplorationRate:
+            return self.env.action_space.sample()
+        else:
+            return np.argmax(self.Q.bestActionFor(state))
 
-	def sampleStates(self,batchSize):
-		count = 0
-		print("Start Sampling")
-		sampledStates = []
-		while count < 1000:
-			frame = self.env.reset()
-			state = self.stateGenerator.getState(frame)
-			while count < 1000:
-				# self.env.render()
-				# time.sleep(0.01)
-				action = self.env.action_space.sample()
-				nextFrame, reward, isTerminal, info = self.env.step(action)
-				nextState = self.stateGenerator.getState(nextFrame)
-				state = nextState
-				sampledStates.append(state)
-				count += 1
-				if isTerminal:
-					break
-		indices = list(range(len(sampledStates)))
-		np.random.shuffle(indices)
-		sampleIndices = indices[:batchSize]
-		sample = [sampledStates[i] for i in sampleIndices]
-		self.evaluationStates = sample
-		print("Sampling done")
+    def getMetricStates(self, numStates):
+        count = 0
+        print("Start Sampling")
+        # todo improve
+        sampledStates = []
+        while count < 10000:
+            frame = self.env.reset()
+            state = self.stateGenerator.getState(frame)
+            while count < 10000:
+                self.env.render()
+                time.sleep(0.01)
+                action = self.env.action_space.sample()
+                nextFrame, reward, isTerminal, info = self.env.step(action)
+                nextState = self.stateGenerator.getState(nextFrame)
+                state = nextState
+                sampledStates.append(state)
+                count += 1
+                if isTerminal:
+                    break
+        indices = list(range(len(sampledStates)))
+        np.random.shuffle(indices)
+        sampleIndices = indices[:numStates]
+        sample = [sampledStates[i] for i in sampleIndices]
+        self.metricStates = sample
+        print("Sampling done")
 
-
-	def learn(self, numEpisodes, episodeMaxLength):
-		self.stateGenerator.resetFrames()
-		for ithEpisode in range(numEpisodes):
-			print("epoch: " + str(ithEpisode))
-			frame = self.env.reset()
-			state = self.stateGenerator.getState(frame)
-			for ithTimestep in range(episodeMaxLength):
-				# self.env.render()
-				# time.sleep(0.01)
-				action = self.chooseActionGreedily(state,ithTimestep,episodeMaxLength)
-				nextFrame, reward, isTerminal, info = self.env.step(action)
-				nextState = self.stateGenerator.getState(nextFrame)
-				self.replayMemory.addTransition(Transition(state, action, np.sign(reward), nextState, isTerminal))
-				transitions = self.replayMemory.sample(32)
-				self.Q.train(transitions,self.discount)
-				state = nextState
-				if isTerminal:
-					print("Episode finished after %d timesteps" % (ithTimestep + 1,))
-					break
-			print(self.Q.getEvaluationScore(self.evaluationStates))
+    def learn(self, numEpisodes, episodeMaxLength):
+        for ithEpisode in range(numEpisodes):
+            self.stateGenerator.resetFrames()
+            print("epoch: " + str(ithEpisode))
+            frame = self.env.reset()
+            state = self.stateGenerator.getState(frame)
+            for ithTimestep in range(episodeMaxLength):
+                # self.env.render()
+                # time.sleep(0.01)
+                action = self.chooseActionGreedily(state, ithTimestep, episodeMaxLength)
+                nextFrame, reward, isTerminal, info = self.env.step(action)
+                nextState = self.stateGenerator.getState(nextFrame)
+                self.replayMemory.addTransition(Transition(state, action, np.sign(reward), nextState, isTerminal))
+                transitions = self.replayMemory.sample(32)
+                self.Q.train(transitions, self.discount)
+                state = nextState
+                if isTerminal:
+                    print("Episode finished after %d timesteps" % (ithTimestep + 1,))
+                    break
+            print(self.Q.getEvaluationScore(self.metricStates))
 
 
 STATE_GENERATOR_CAPACITY = 4
@@ -138,13 +140,13 @@ DISCOUNT = 0.9
 
 NUMBER_OF_EPISODES = 100
 EPISODE_MAX_LENGTH = 1000
-ESTIMATION_CAPACITY = 20
+METRIC_STATES_CAPACITY = 20
 
 deepReinforcingAgent = DeepReinforcingAgent(gym.make('Seaquest-v0'),
-											STATE_GENERATOR_CAPACITY,
-											REPLAY_MEMORY_CAPACITY,
-											EXPLORATION_RATE, DISCOUNT)
+                                            STATE_GENERATOR_CAPACITY,
+                                            REPLAY_MEMORY_CAPACITY,
+                                            EXPLORATION_RATE, DISCOUNT)
 
-deepReinforcingAgent.sampleStates(ESTIMATION_CAPACITY)
+deepReinforcingAgent.getMetricStates(METRIC_STATES_CAPACITY)
 
 deepReinforcingAgent.learn(NUMBER_OF_EPISODES, EPISODE_MAX_LENGTH)
