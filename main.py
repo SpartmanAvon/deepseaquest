@@ -1,11 +1,9 @@
-import time
-
 import gym
 import numpy as np
-from dqn import DQN
 import scipy.ndimage.interpolation as interpolation
 from scipy.misc import imsave
-from datetime import datetime
+
+from dqn import DQN
 
 
 class StateGenerator:
@@ -92,8 +90,7 @@ class DeepReinforcingAgent:
                 self.stateGenerator.getState(frame)
 
             while len(sampledStates) < NUM_SAMPLING_TIMESTEPS:
-                self.env.render()
-                # time.sleep(0.01)
+                # self.env.render()
                 action = self.env.action_space.sample()
                 frame, reward, isTerminal, info = self.env.step(action)
                 sampledStates.append(self.stateGenerator.getState(frame))
@@ -135,17 +132,18 @@ class DeepReinforcingAgent:
                 if isTerminal:
                     print("Episode finished after %d timesteps" % (ithTimestep + 1,))
                     break
-            print(self.Q.getEvaluationScore(self.evaluatingStates))
+            print('Evaluation metric =', self.Q.getEvaluationScore(self.evaluatingStates))
+            self.Q.saveModel()
 
 
 STATE_GENERATOR_CAPACITY = 4
-REPLAY_MEMORY_CAPACITY = 10000
+REPLAY_MEMORY_CAPACITY = 500000
 EXPLORATION_RATE = 1
 DISCOUNT = 0.9
 
 NUM_OF_EPISODES = 10000
 EPISODE_MAX_LENGTH = 10000
-NUM_EVALUATING_STATES = 20
+NUM_EVALUATING_STATES = 3
 
 np.random.seed(0)
 

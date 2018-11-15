@@ -1,5 +1,6 @@
 from keras.models import Model
 from keras.layers import *
+from keras.optimizers import RMSprop
 
 
 class DQN:
@@ -25,7 +26,8 @@ class DQN:
                             activation='linear')(thirdHiddenLayer)
 
         model = Model(inputLayer, outputLayer)
-        model.compile(optimizer='rmsprop', loss='mse')
+        optimizer = RMSprop(clipvalue=0.5, clipnorm=1.0)
+        model.compile(optimizer=optimizer, loss='mse')
         # print(model.summary())
         self.model = model
 
@@ -47,7 +49,7 @@ class DQN:
     def train(self, transitions, discount):
         states = np.array([transition.state for transition in transitions])
         trueLabels = np.array([self.getTrueLabels(transition, discount) for transition in transitions])
-        self.model.fit(states, trueLabels, verbose=1)
+        self.model.fit(states, trueLabels, verbose=0)
         return
 
     def getEvaluationScore(self, evaluationStates):
@@ -57,3 +59,10 @@ class DQN:
         for state in evaluationStates:
             totalQ += np.max(self.predictFor(state), axis=1)
         return totalQ / totalStates
+
+    def saveModel(self):
+        # save the model
+        modelJson = self.model.to_json()
+        with open('model.json', 'w') as json_file:
+            json_file.write(modelJson)
+        self.model.save_weights('model.h5')
