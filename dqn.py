@@ -47,7 +47,7 @@ class DQN:
     def train(self, transitions, discount):
         states = np.array([transition.state for transition in transitions])
         trueLabels = np.array([self.getTrueLabels(transition, discount) for transition in transitions])
-        self.model.fit(states, trueLabels, verbose=0)
+        self.model.fit(states, trueLabels, verbose=1)
         return
 
     def getEvaluationScore(self, evaluationStates):
@@ -55,5 +55,5 @@ class DQN:
         totalStates = len(evaluationStates)
         totalQ = 0
         for state in evaluationStates:
-            totalQ += np.max(self.predictFor(state), 1)
+            totalQ += np.max(self.predictFor(state), axis=1)
         return totalQ / totalStates

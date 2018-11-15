@@ -11,6 +11,7 @@ from datetime import datetime
 class StateGenerator:
     @classmethod
     def decrease_dimensionality(cls, image):
+        assert (image.shape == (210, 160, 3))
         # downsample size = 80 x 80
         downsampled = interpolation.zoom(image[20:-30, ], [0.5, 0.5, 1])
         r, g, b = downsampled[:, :, 0], downsampled[:, :, 1], downsampled[:, :, 2]
@@ -26,12 +27,11 @@ class StateGenerator:
         # add frame
         if len(self.frames) == self.capacity:
             self.frames.pop(0)
-        self.frames.append(frame)
+        self.frames.append(StateGenerator.decrease_dimensionality(frame))
         # generate state
         paddingSize = self.capacity - len(self.frames)
         zeroFrames = [np.zeros(self.frameShape) for _ in range(paddingSize)]
-        frames = [StateGenerator.decrease_dimensionality(f) for f in self.frames]
-        frames = zeroFrames + frames
+        frames = zeroFrames + self.frames
         return np.stack(frames, axis=2)
 
     def resetFrames(self):
@@ -118,7 +118,7 @@ class DeepReinforcingAgent:
 
     def learn(self, numEpisodes, episodeMaxLength):
         for ithEpisode in range(numEpisodes):
-            print('Epoch: %d' % ithEpisode)
+            print('Episode: %d' % ithEpisode)
             self.stateGenerator.resetFrames()
             frame = self.env.reset()
             state = self.stateGenerator.getState(frame)
@@ -156,4 +156,4 @@ deepReinforcingAgent = DeepReinforcingAgent(gym.make('Seaquest-v0'),
                                             DISCOUNT,
                                             NUM_EVALUATING_STATES)
 
-# deepReinforcingAgent.learn(NUM_OF_EPISODES, EPISODE_MAX_LENGTH)
+deepReinforcingAgent.learn(NUM_OF_EPISODES, EPISODE_MAX_LENGTH)
