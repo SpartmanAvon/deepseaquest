@@ -4,6 +4,8 @@ import gym
 import numpy as np
 from dqn import DQN
 import scipy.ndimage.interpolation as interpolation
+from scipy.misc import imsave
+from datetime import datetime
 
 
 class StateGenerator:
@@ -21,20 +23,19 @@ class StateGenerator:
         self.frameShape = (80, 80)
 
     def getState(self, frame):
+        # add frame
         if len(self.frames) == self.capacity:
             self.frames.pop(0)
         self.frames.append(frame)
-        return self.generateState()
-
-    def resetFrames(self):
-        self.frames = []
-
-    def generateState(self):
+        # generate state
         paddingSize = self.capacity - len(self.frames)
         zeroFrames = [np.zeros(self.frameShape) for _ in range(paddingSize)]
         frames = [StateGenerator.decrease_dimensionality(f) for f in self.frames]
         frames = zeroFrames + frames
         return np.stack(frames, axis=2)
+
+    def resetFrames(self):
+        self.frames = []
 
 
 class Transition:
@@ -58,63 +59,67 @@ class ReplayMemory:
         self.transitions.append(transition)
 
     def sample(self, batchSize):
-        # todo improve
-        indices = list(range(len(self.transitions)))
-        np.random.shuffle(indices)
-        sampleIndices = indices[:batchSize]
+        sampleIndices = np.random.randint(low=0, high=len(self.transitions), size=batchSize)
         sample = [self.transitions[i] for i in sampleIndices]
         return sample
 
 
 class DeepReinforcingAgent:
-    def __init__(self, env, stateGeneratorCapacity, replayMemoryCapacity, explorationRate, discount):
+    def __init__(self, env, stateGeneratorCapacity, replayMemoryCapacity, explorationRate, discount,
+                 numEvaluatingStates):
+        assert (0 <= explorationRate <= 1)
+        assert (0 <= discount <= 1)
         self.env = env
         self.stateGenerator = StateGenerator(stateGeneratorCapacity)
         self.replayMemory = ReplayMemory(replayMemoryCapacity)
-        assert (0 <= explorationRate <= 1)
         self.explorationRate = explorationRate
-        self.Q = DQN(env.action_space.n)
         self.discount = discount
-        self.metricStates = []
+        self.Q = DQN(env.action_space.n)
+
+        self.evaluatingStates = self.sampleEvaluatingStates(numEvaluatingStates)
+
+    def sampleEvaluatingStates(self, numEvaluatingStates):
+        NUM_SAMPLING_TIMESTEPS = 1000
+        sampledStates = []
+
+        while len(sampledStates) < NUM_SAMPLING_TIMESTEPS:
+            frame = self.env.reset()
+            self.stateGenerator.getState(frame)
+
+            # The following loop is to set the agent in the middle of arena for better evaluation states
+            for _ in range(60):
+                frame, reward, isTerminal, info = self.env.step(5)
+                self.stateGenerator.getState(frame)
+
+            while len(sampledStates) < NUM_SAMPLING_TIMESTEPS:
+                self.env.render()
+                # time.sleep(0.01)
+                action = self.env.action_space.sample()
+                frame, reward, isTerminal, info = self.env.step(action)
+                sampledStates.append(self.stateGenerator.getState(frame))
+                if isTerminal:
+                    break
+
+        sampleIndices = np.random.randint(low=0, high=len(sampledStates), size=numEvaluatingStates)
+        evaluatingStates = [sampledStates[i] for i in sampleIndices]
+
+        for i, state in enumerate(evaluatingStates):
+            imsave('evaluating_state_%d.png' % i, state[:, :, 0])
+        print('Evaluation states are sampled')
+
+        return evaluatingStates
 
     def chooseActionGreedily(self, state, ithTimestep, episodeMaxLength):
-        curExplorationRate = (ithTimestep * 0.1 + (
-                    episodeMaxLength - ithTimestep) * self.explorationRate) / episodeMaxLength
-        if np.random.rand() <= curExplorationRate:
+        self.explorationRate = max(1 - (0.9 * ithTimestep / episodeMaxLength), 0.1)
+        if np.random.rand() <= self.explorationRate:
             return self.env.action_space.sample()
         else:
             return np.argmax(self.Q.bestActionFor(state))
 
-    def getMetricStates(self, numStates):
-        count = 0
-        print("Start Sampling")
-        # todo improve
-        sampledStates = []
-        while count < 10000:
-            frame = self.env.reset()
-            state = self.stateGenerator.getState(frame)
-            while count < 10000:
-                self.env.render()
-                time.sleep(0.01)
-                action = self.env.action_space.sample()
-                nextFrame, reward, isTerminal, info = self.env.step(action)
-                nextState = self.stateGenerator.getState(nextFrame)
-                state = nextState
-                sampledStates.append(state)
-                count += 1
-                if isTerminal:
-                    break
-        indices = list(range(len(sampledStates)))
-        np.random.shuffle(indices)
-        sampleIndices = indices[:numStates]
-        sample = [sampledStates[i] for i in sampleIndices]
-        self.metricStates = sample
-        print("Sampling done")
-
     def learn(self, numEpisodes, episodeMaxLength):
         for ithEpisode in range(numEpisodes):
+            print('Epoch: %d' % ithEpisode)
             self.stateGenerator.resetFrames()
-            print("epoch: " + str(ithEpisode))
             frame = self.env.reset()
             state = self.stateGenerator.getState(frame)
             for ithTimestep in range(episodeMaxLength):
@@ -130,23 +135,25 @@ class DeepReinforcingAgent:
                 if isTerminal:
                     print("Episode finished after %d timesteps" % (ithTimestep + 1,))
                     break
-            print(self.Q.getEvaluationScore(self.metricStates))
+            print(self.Q.getEvaluationScore(self.evaluatingStates))
 
 
 STATE_GENERATOR_CAPACITY = 4
-REPLAY_MEMORY_CAPACITY = 500
+REPLAY_MEMORY_CAPACITY = 10000
 EXPLORATION_RATE = 1
 DISCOUNT = 0.9
 
-NUMBER_OF_EPISODES = 100
-EPISODE_MAX_LENGTH = 1000
-METRIC_STATES_CAPACITY = 20
+NUM_OF_EPISODES = 10000
+EPISODE_MAX_LENGTH = 10000
+NUM_EVALUATING_STATES = 20
+
+np.random.seed(0)
 
 deepReinforcingAgent = DeepReinforcingAgent(gym.make('Seaquest-v0'),
                                             STATE_GENERATOR_CAPACITY,
                                             REPLAY_MEMORY_CAPACITY,
-                                            EXPLORATION_RATE, DISCOUNT)
+                                            EXPLORATION_RATE,
+                                            DISCOUNT,
+                                            NUM_EVALUATING_STATES)
 
-deepReinforcingAgent.getMetricStates(METRIC_STATES_CAPACITY)
-
-deepReinforcingAgent.learn(NUMBER_OF_EPISODES, EPISODE_MAX_LENGTH)
+# deepReinforcingAgent.learn(NUM_OF_EPISODES, EPISODE_MAX_LENGTH)

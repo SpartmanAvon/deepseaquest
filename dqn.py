@@ -29,19 +29,20 @@ class DQN:
         # print(model.summary())
         self.model = model
 
-    def getQVals(self, state):
+    def predictFor(self, state):
         return self.model.predict(np.array([state]))
 
     def getTrueLabels(self, transition, discount):
-        trueLabels = self.getQVals(transition.state).flatten()
+        trueLabels = self.predictFor(transition.state).flatten()
         if transition.isTerminal:
             trueLabels[transition.action] = transition.reward
         else:
-            trueLabels[transition.action] = transition.reward + discount * np.amax(self.getQVals(transition.nextState))
+            trueLabels[transition.action] = transition.reward + discount * np.max(
+                self.predictFor(transition.nextState), axis=1)
         return trueLabels
 
     def bestActionFor(self, state):
-        return np.argmax(self.getQVals(state), axis=1)
+        return np.argmax(self.predictFor(state), axis=1)
 
     def train(self, transitions, discount):
         states = np.array([transition.state for transition in transitions])
@@ -54,5 +55,5 @@ class DQN:
         totalStates = len(evaluationStates)
         totalQ = 0
         for state in evaluationStates:
-            totalQ += np.amax(self.getQVals(state))
+            totalQ += np.max(self.predictFor(state), 1)
         return totalQ / totalStates
